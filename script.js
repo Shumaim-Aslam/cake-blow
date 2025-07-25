@@ -1,40 +1,115 @@
-// Load the candle state from the URL (e.g., ?candles=11001)
-function loadCandleState() {
-  const params = new URLSearchParams(window.location.search);
-  const state = params.get('candles');
-  if (!state) return;
 
-  const candles = document.querySelectorAll('.candle');
-  for (let i = 0; i < candles.length && i < state.length; i++) {
-    if (state[i] === '0') {
-      candles[i].classList.add('blown');
-    } else {
-      candles[i].classList.remove('blown');
+document.addEventListener("DOMContentLoaded", function () {
+  const cake = document.querySelector(".cake");
+  const candleCountDisplay = document.getElementById("candleCount");
+  let candles = [];
+  let audioContext;
+
+  // Add default candles on cake load
+  function addDefaultCandles(count = 12){
+    const cakeRect = cake.getBoundingClientRect();
+    const cakeWidth = cakeRect.width;
+    const cakeHeight = cakeRect.height;
+    for (let i = 0; i < count; i++) {
+      // Arrange candles in a circle around the top of the cake
+      const radius = cakeWidth * 0.4 / 2; // 40% of cake width as diameter
+      const centerX = cakeWidth / 2;
+      const centerY = cakeHeight * 0.17; // near top of cake
+      const ovalRadiusX = cakeWidth * 0.38; // horizontal radius
+      const ovalRadiusY = cakeHeight * 0.165; // vertical radius
+      const angle = (2 * Math.PI / count) * i;
+      const left = centerX + ovalRadiusX * Math.cos(angle) - 3;
+      const top = centerY + ovalRadiusY * Math.sin(angle) - 3;
+      addCandle(left, top);
     }
   }
-}
+  // Arrange candles in an oval (ellipse) around the top of the cake
+      // const ovalRadiusX = cakeWidth * 0.35; // horizontal radius
+      // const ovalRadiusY = cakeHeight * 0.18; // vertical radius
+      // const angle = (2 * Math.PI / count) * i;
+      // const left = centerX + ovalRadiusX * Math.cos(angle) - 10;
+      // const top = centerY + ovalRadiusY * Math.sin(angle) - 10;
 
-// Save the candle state in the URL whenever a candle is blown
-function saveCandleState() {
-  const candles = document.querySelectorAll('.candle');
-  let state = '';
-  candles.forEach(candle => {
-    state += candle.classList.contains('blown') ? '0' : '1';
+  // Call after DOM is ready
+  addDefaultCandles();
+  let analyser;
+  let microphone;
+
+  function updateCandleCount() {
+    const activeCandles = candles.filter(
+      (candle) => !candle.classList.contains("out")
+    ).length;
+    candleCountDisplay.textContent = activeCandles;
+  }
+
+  function addCandle(left, top) {
+    const candle = document.createElement("div");
+    candle.className = "candle";
+    candle.style.left = left + "px";
+    candle.style.top = top + "px";
+
+    const flame = document.createElement("div");
+    flame.className = "flame";
+    candle.appendChild(flame);
+
+    cake.appendChild(candle);
+    candles.push(candle);
+    updateCandleCount();
+  }
+
+  cake.addEventListener("click", function (event) {
+    const rect = cake.getBoundingClientRect();
+    const left = event.clientX - rect.left;
+    const top = event.clientY - rect.top;
+    addCandle(left, top);
   });
-  const newUrl = `${window.location.pathname}?candles=${state}`;
-  window.history.replaceState(null, '', newUrl);
-}
 
-window.addEventListener('DOMContentLoaded', () => {
-  loadCandleState();
+  function isBlowing() {
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    analyser.getByteFrequencyData(dataArray);
 
-  const candles = document.querySelectorAll('.candle');
-  candles.forEach(candle => {
-    candle.addEventListener('click', () => {
-      if (!candle.classList.contains('blown')) {
-        candle.classList.add('blown');
-        saveCandleState();
-      }
-    });
-  });
+    let sum = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      sum += dataArray[i];
+    }
+    let average = sum / bufferLength;
+
+    return average > 40; //
+  }
+
+  function blowOutCandles() {
+    let blownOut = 0;
+
+    if (isBlowing()) {
+      candles.forEach((candle) => {
+        if (!candle.classList.contains("out") && Math.random() > 0.5) {
+          candle.classList.add("out");
+          blownOut++;
+        }
+      });
+    }
+
+    if (blownOut > 0) {
+      updateCandleCount();
+    }
+  }
+
+  if (navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then(function (stream) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+        analyser.fftSize = 256;
+        setInterval(blowOutCandles, 200);
+      })
+      .catch(function (err) {
+        console.log("Unable to access microphone: " + err);
+      });
+  } else {
+    console.log("getUserMedia not supported on your browser!");
+  }
 });
